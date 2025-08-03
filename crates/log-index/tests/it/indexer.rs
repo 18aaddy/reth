@@ -9,16 +9,13 @@ use reth_provider::test_utils::MockEthProvider;
 use reth_provider::{BlockReader, ReceiptProvider};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use tracing::info;
 
 fn persist(
     accumulator: &mut FilterMapAccumulator,
     storage: &InMemoryFilterMapsProvider,
 ) -> FilterResult<()> {
-    let mut last_indexed_block = 0;
-    let mut last_map_index = 0;
     for completed_map in accumulator.drain_completed_maps() {
-        let completed_map_clone = completed_map.clone();
-        println!("storing filter map: {:?}", completed_map.index);
         // store filter map rows
 
         for (map_row_index, row) in completed_map.rows {
@@ -29,15 +26,14 @@ fn persist(
         for (block_number, log_value_index) in completed_map.block_log_value_indices {
             storage.store_log_value_index_for_block(block_number, log_value_index)?;
         }
-        last_indexed_block =
-            *completed_map_clone.block_log_value_indices.keys().max().unwrap_or(&0);
-        last_map_index = completed_map_clone.index;
     }
+    info!("last_indexed_block: {:?}", accumulator.metadata.last_indexed_block);
+    info!("last_map_index: {:?}", accumulator.metadata.last_map_index);
 
     // store metadata
     let mut metadata = storage.get_metadata()?.unwrap_or_default();
-    metadata.last_indexed_block = last_indexed_block;
-    metadata.last_map_index = last_map_index;
+    metadata.last_indexed_block = accumulator.metadata.last_indexed_block;
+    metadata.last_map_index = accumulator.metadata.last_map_index;
     metadata.next_log_value_index = accumulator.log_value_index + 1;
 
     storage.store_metadata(metadata).unwrap();
@@ -45,6 +41,7 @@ fn persist(
     Ok(())
 }
 
+// this will be the execute() in the index logs stage
 pub(crate) async fn index(
     provider: Arc<MockEthProvider>,
     range: RangeInclusive<BlockNumber>,

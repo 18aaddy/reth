@@ -8,6 +8,7 @@ use rand::seq::SliceRandom;
 use reth_provider::{test_utils::MockEthProvider, ReceiptProvider};
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::{info, trace};
 
 use crate::filter::get_logs_in_block_range;
 use crate::indexer::index;
@@ -15,13 +16,17 @@ use crate::storage::InMemoryFilterMapsProvider;
 use crate::utils::create_test_provider_with_random_blocks_and_receipts;
 
 const START_BLOCK: BlockNumber = 0;
-const BLOCKS_COUNT: usize = 250;
+const BLOCKS_COUNT: usize = 500;
 const TX_COUNT: u8 = 150;
 const LOG_COUNT: u8 = 1;
 const MAX_TOPICS: usize = 4;
 
 #[tokio::test]
 async fn test_filter_map() {
+    reth_tracing::init_test_tracing();
+
+    let start = Instant::now();
+    info!("creating provider with {} blocks, and {} txs per block", BLOCKS_COUNT, TX_COUNT);
     let provider: MockEthProvider = create_test_provider_with_random_blocks_and_receipts(
         START_BLOCK,
         BLOCKS_COUNT,
@@ -30,8 +35,7 @@ async fn test_filter_map() {
         MAX_TOPICS,
     )
     .await;
-
-    println!("provider created");
+    info!("provider created in {:?}s", start.elapsed().as_secs_f64());
 
     let provider = Arc::new(provider);
 
@@ -41,9 +45,12 @@ async fn test_filter_map() {
 
     let range = START_BLOCK..=START_BLOCK + BLOCKS_COUNT as u64 - 1;
 
+    let start = Instant::now();
+    info!("indexing logs");
     let result = index(provider.clone(), range.clone(), storage.clone()).await;
+    info!("Indexed all logs in {:?}s", start.elapsed().as_secs_f64());
+
     assert!(result.is_ok());
-    println!("indexed");
 
     // get all the logs from the provider
     let receipts = provider.receipts_by_block_range(range.clone()).unwrap_or_default();
@@ -53,19 +60,15 @@ async fn test_filter_map() {
         .cloned()
         .collect();
 
-    println!("number of logs: {:?}", logs.len());
+    info!("Number of logs indexed: {}", logs.len());
 
     // shuffle the logs
-    let mut rng = rand::rng();
-    let mut logs = logs.clone();
-    logs.shuffle(&mut rng);
+    // let mut rng = rand::rng();
+    // let mut logs = logs.clone();
+    // logs.shuffle(&mut rng);
 
     // find all the logs in the filter map
-    println!("fetching logs");
     for (i, log) in logs.iter().enumerate() {
-        if i % 10000 == 0 {
-            println!("progress: {:?}%", (i as f64) / (logs.len() as f64) * 100.0);
-        }
         let address = log.address.clone();
 
         let topics: Vec<B256> = log.topics().iter().map(|&topic| topic).collect();
@@ -108,15 +111,11 @@ async fn test_filter_map() {
         let end = Instant::now();
         let bloom_time = end.duration_since(start);
 
-        let ratio = bloom_time.as_secs_f64() / indexed_time.as_secs_f64();
-        let mut average_ratio = 0.0;
-        average_ratio = (average_ratio * (i as f64) + ratio) / (i as f64 + 1.0);
-        if i % 1000 == 0 {
-            println!(
-                "indexing is {:?}x faster than bloom, average ratio: {:?}",
-                ratio, average_ratio
-            );
-        }
+        trace!(
+            "bloom_time/indexed_time: {:?}",
+            bloom_time.as_secs_f64() / indexed_time.as_secs_f64()
+        );
+        trace!("bloom_time: {:?}, indexed_time: {:?}", bloom_time, indexed_time);
 
         assert!(logs_with_bloom.is_ok());
 

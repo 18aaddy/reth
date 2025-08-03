@@ -6,6 +6,7 @@ use alloy_rpc_types_eth::BlockHashOrNumber;
 use alloy_rpc_types_eth::Filter;
 use reth_log_index::{FilterError, FilterMapsReader, FilterResult};
 use reth_provider::{HeaderProvider, ReceiptProvider};
+use test_fuzz::runtime::num_traits::Saturating;
 
 use crate::{query::get_log_at_index, storage::InMemoryFilterMapsProvider};
 
@@ -74,17 +75,18 @@ pub async fn get_logs_in_block_range(
             let mut ranges = Vec::new();
 
             if from_block < *indexed.start() {
-                ranges.push(from_block..=(*indexed.start() - 1));
+                ranges.push(from_block..=(indexed.start().saturating_sub(1)));
             }
 
             if to_block > *indexed.end() {
-                ranges.push((*indexed.end())..=to_block);
+                ranges.push((indexed.end().saturating_sub(1))..=to_block);
             }
 
             ranges
         }
         _ => vec![from_block..=to_block],
     };
+    println!("bloom_ranges: {:?}", bloom_ranges);
 
     // Fetch from index (if available)
     let index_future = if let Some(range) = indexed_range {

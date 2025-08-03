@@ -8634,11 +8634,13 @@ dependencies = [
  "reth-storage-api",
  "reth-storage-errors",
  "reth-testing-utils",
+ "reth-tracing",
  "serde",
  "sha2 0.10.9",
  "test-fuzz",
  "thiserror 2.0.12",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
