@@ -15,6 +15,8 @@ workspace = true
 # alloy
 alloy-primitives.workspace = true
 alloy-rpc-types-eth.workspace = true
+alloy-trie.workspace = true
+alloy-consensus.workspace = true
 
 # bytes
 bytes.workspace = true
@@ -24,6 +26,8 @@ bytes.workspace = true
 reth-errors.workspace = true
 reth-ethereum-primitives.workspace = true
 reth-primitives-traits.workspace = true
+reth-trie-sparse.workspace = true
+reth-trie-common.workspace = true
 
 
 # misc
@@ -31,6 +35,10 @@ serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 sha2.workspace = true
 fnv.workspace = true
+nybbles.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+schnellru.workspace = true
 
 # codecs
 reth-codecs = { workspace = true, optional = true }

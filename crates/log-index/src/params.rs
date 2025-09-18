@@ -9,7 +9,9 @@ use std::hash::Hasher;
 
 use crate::{
     constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, RANGE_TEST_PARAMS},
+    hasher::{GTI_EPOCHS, GTI_LOG_ENTRIES},
     types::{FilterError, FilterMapRow, MapRowIndex},
+    TreeIndex,
 };
 
 /// A strictly monotonically increasing list of log value indices in the range of a
@@ -35,6 +37,18 @@ pub struct FilterMapParams {
     pub base_row_length_ratio: u64,
     /// maxRowLength log2 growth per layer
     pub log_layer_diff: u64,
+    ///
+    pub log_epoch_history: u64,
+
+    // Derived fields
+    ///
+    pub map_height: u32,
+    ///
+    pub maps_per_epoch: u32,
+    ///
+    pub base_row_length: u32,
+    ///
+    pub values_per_map: u64,
 
     /// (Not affecting consensus)
     pub base_row_group_length: u64,
@@ -241,6 +255,24 @@ impl FilterMapParams {
     pub const fn row_from_global_row(&self, global_row: MapRowIndex) -> u64 {
         global_row % self.map_height()
     }
+
+    pub fn gti_epoch_root(&self, epoch: u32) -> TreeIndex {
+        GTI_EPOCHS.append(epoch.into(), self.log_epoch_history)
+    }
+
+    pub fn gti_log_entry_root(&self, lv_index: u64) -> TreeIndex {
+        let log_tree_height = self.log_maps_per_epoch + self.log_values_per_map;
+        self.gti_epoch_root((lv_index >> log_tree_height) as u32)
+            .child(GTI_LOG_ENTRIES)
+            .append(lv_index & (1 << log_tree_height - 1), log_tree_height)
+    }
+
+        // pub fn derive_fields(&mut self) {
+        //     self.map_height = 1<<self.log_map_height;
+        //     self.maps_per_epoch = 1<<self.log_maps_per_epoch;
+        //     self.values_per_map = 1 << self.values_per_map;
+        //     self.base_row_length = (self.values_per_map * self.base_row_length_ratio / self.map_height as u64) as u32;
+        // }
 }
 
 /// Calculate the global row index for database storage.
@@ -325,8 +357,8 @@ mod tests {
             let mut rng = rng();
             let map_index = rng.random::<u64>();
 
-            let lv_index = map_index
-                << params.log_values_per_map + rng.random_range(0..params.values_per_map());
+            let lv_index = map_index <<
+                params.log_values_per_map + rng.random_range(0..params.values_per_map());
 
             // Generate random hash
             let mut lv_hash_bytes = [0u8; 32];

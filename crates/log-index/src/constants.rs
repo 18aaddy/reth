@@ -19,6 +19,7 @@ pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
     base_row_group_length: 32,
     base_row_length_ratio: 8,
     log_layer_diff: 4,
+    log_epoch_history: 24,
 };
 
 /// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for
@@ -31,4 +32,5 @@ pub const RANGE_TEST_PARAMS: FilterMapParams = FilterMapParams {
     base_row_group_length: 32,
     base_row_length_ratio: 16, // baseRowLength >= 1
     log_layer_diff: 4,
+    log_epoch_history: 24,
 };

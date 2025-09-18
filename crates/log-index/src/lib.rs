@@ -52,6 +52,10 @@ mod params;
 mod provider;
 mod types;
 mod utils;
+mod hasher;
+mod proof;
+mod log_index_hasher;
+mod mem_tree;
 
 pub use accumulator::{FilterMap, FilterMapAccumulator};
 pub use constants::{DEFAULT_PARAMS, EXPECTED_MATCHES, MAX_LAYERS, RANGE_TEST_PARAMS};
@@ -59,3 +63,6 @@ pub use params::FilterMapParams;
 pub use provider::{FilterMapsReader, FilterMapsWriter};
 pub use types::*;
 pub use utils::{address_value, extract_log_values_from_block, topic_value};
+// pub use hasher::get_root_hash;
+pub use hasher::TreeIndex;
+pub use proof::TreeReader;
