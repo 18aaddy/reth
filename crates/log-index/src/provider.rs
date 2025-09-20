@@ -9,7 +9,7 @@ use crate::{
     types::{FilterError, FilterMapMetadata, FilterMapRow, FilterResult, MapRowIndex},
     utils::{address_value, topic_value},
 };
-use alloy_primitives::{map::HashMap, Address, BlockNumber, FixedBytes, B256};
+use alloy_primitives::{Address, BlockNumber, FixedBytes, B256};
 use std::{ops::RangeInclusive, vec::Vec};
 
 /// Provider trait for reading filter map data.

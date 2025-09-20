@@ -66,3 +66,4 @@ pub use utils::{address_value, extract_log_values_from_block, topic_value};
 // pub use hasher::get_root_hash;
 pub use hasher::TreeIndex;
 pub use proof::TreeReader;
+pub use log_index_hasher::LogIndexHasher;

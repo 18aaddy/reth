@@ -5,6 +5,7 @@ mod query;
 mod storage;
 mod test;
 mod utils;
+mod log_index_hasher;
 
 mod filter;
 

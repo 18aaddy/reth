@@ -199,9 +199,10 @@ impl<'a> ProgListIndex<'a> {
 }
 
 ///
+#[derive(Debug)]
 pub struct Hasher<'a> {
-    pub tree: &'a mut MemTreeView, //Box<dyn LogIndexData>,
-    pub params: &'a FilterMapParams,
+    pub tree: Box<MemTreeView>, //Box<dyn LogIndexData>,
+    pub params: &'a mut FilterMapParams,
     pub row_mapping_cache: LruMap<B256, LVPosition>,
 }
 

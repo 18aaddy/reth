@@ -11,13 +11,13 @@ use crate::{
     TreeIndex,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct MemTreeRoot {
     node_index: u32,
     block_id: B256,
 }
 
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub(crate) struct MemTreeNode {
     node: TreeNode,
     left: u32,
@@ -69,7 +69,7 @@ impl MemTreeNode {
 }
 
 // TODO: Mutex and Arc
-#[derive(Clone, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct MemTree {
     pub nodes: Vec<MemTreeNode>,
     pub node_count: u32,
@@ -78,7 +78,19 @@ pub(crate) struct MemTree {
     pub roots: HashMap<u64, MemTreeRoot>,
 }
 
-#[derive(Clone, Copy, Default)]
+impl Default for MemTree {
+    fn default() -> Self {
+        Self {
+            // ? 5?
+            nodes: vec![MemTreeNode { node: [0; 32], left: 0, right: 0 }],
+            node_count: 0,
+            blocks: Range::default(),
+            roots: HashMap::<u64, MemTreeRoot>::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Range<T> {
     pub first: T,
     pub after_last: T,
@@ -457,6 +469,7 @@ impl MemTreeView {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct MemTreeView {
     pub tree: Arc<Mutex<MemTree>>,
     pub block_number: u64,

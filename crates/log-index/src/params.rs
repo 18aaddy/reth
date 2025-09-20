@@ -267,12 +267,13 @@ impl FilterMapParams {
             .append(lv_index & (1 << log_tree_height - 1), log_tree_height)
     }
 
-        // pub fn derive_fields(&mut self) {
-        //     self.map_height = 1<<self.log_map_height;
-        //     self.maps_per_epoch = 1<<self.log_maps_per_epoch;
-        //     self.values_per_map = 1 << self.values_per_map;
-        //     self.base_row_length = (self.values_per_map * self.base_row_length_ratio / self.map_height as u64) as u32;
-        // }
+    ///
+    pub fn derive_fields(&mut self) {
+        self.map_height = 1<<self.log_map_height;
+        self.maps_per_epoch = 1<<self.log_maps_per_epoch;
+        self.values_per_map = 1 << self.log_values_per_map;
+        self.base_row_length = (self.values_per_map * self.base_row_length_ratio / self.map_height as u64) as u32;
+    }
 }
 
 /// Calculate the global row index for database storage.
