@@ -6,7 +6,7 @@ use reth_ethereum_primitives::Receipt;
 use schnellru::{ByLength, LruMap};
 
 use crate::{
-    hasher::Hasher,
+    hasher::{Hasher, LogValue},
     mem_tree::{MemTree, MemTreeView},
 };
 use reth_log_index_common::{TreeIndex, DEFAULT_PARAMS};
@@ -37,7 +37,7 @@ impl LogIndexHasher {
             last_node_pos: [0; 128],
         });
         let hasher = Hasher { tree, params, row_mapping_cache };
-        hasher.params.derive_fields();
+
         LogIndexHasher {
             header_cache: LruMap::new(ByLength::new(100)),
             id_cache: LruMap::new(ByLength::new(100)),
