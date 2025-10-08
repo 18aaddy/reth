@@ -2364,6 +2364,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "consensus"
+version = "1.7.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "fnv",
+ "modular-bitfield",
+ "reth-codecs",
+ "reth-errors",
+ "reth-ethereum-primitives",
+ "reth-log-index",
+ "reth-log-index-common",
+ "reth-primitives-traits",
+ "schnellru",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "console"
 version = "0.15.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

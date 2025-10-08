@@ -174,7 +174,7 @@ members = [
     "examples/custom-beacon-withdrawals",
     "testing/ef-tests/",
     "testing/testing-utils",
-    "crates/tracing-otlp",
+    "crates/tracing-otlp", "crates/log-index/consensus",
 ]
 default-members = ["bin/reth"]
 exclude = ["docs/cli"]
@@ -460,7 +460,7 @@ reth-zstd-compressors = { path = "crates/storage/zstd-compressors", default-feat
 reth-ress-protocol = { path = "crates/ress/protocol" }
 reth-ress-provider = { path = "crates/ress/provider" }
 reth-log-index = { path = "crates/log-index/log-index" }
-reth-log-index-common = { path = "crates/log-index/common", default-features = false }
+reth-log-index-common = { path = "crates/log-index/common" }
 
 # revm
 revm = { version = "29.0.0", default-features = false }

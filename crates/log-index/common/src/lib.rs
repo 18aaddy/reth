@@ -18,3 +18,6 @@ pub use constants::*;
 
 mod params;
 pub use params::*;
+
+mod tree_index;
+pub use tree_index::*;

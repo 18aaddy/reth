@@ -1,7 +1,7 @@
 //! Row and column mapping algorithms for `FilterMaps` based on EIP-7745.
 //! see: <https://eips.ethereum.org/EIPS/eip-7745>
 
-use crate::MAX_LAYERS;
+use crate::{TreeIndex, GTI_EPOCHS, GTI_LOG_ENTRIES, MAX_LAYERS};
 use alloc::vec::Vec;
 use alloy_primitives::B256;
 use fnv::FnvHasher;
@@ -10,13 +10,14 @@ use core::hash::Hasher;
 use sha2::{Digest, Sha256};
 
 /// Default parameters used on mainnet
-const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
+pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
     log_map_height: 16,
     log_map_width: 24,
     log_maps_per_epoch: 10,
     log_values_per_map: 16,
     base_row_length_ratio: 8,
     log_layer_diff: 4,
+    log_epoch_history: 24,
 };
 
 /// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for
@@ -28,6 +29,7 @@ const RANGE_TEST_PARAMS: FilterMapParams = FilterMapParams {
     log_values_per_map: 0,
     base_row_length_ratio: 16, // baseRowLength >= 1
     log_layer_diff: 4,
+    log_epoch_history: 24,
 };
 
 /// `FilterMaps` parameters based on EIP-7745
@@ -45,6 +47,8 @@ pub struct FilterMapParams {
     pub base_row_length_ratio: u32,
     /// maxRowLength log2 growth per layer
     pub log_layer_diff: u32,
+    ///
+    pub log_epoch_history: u64,
 }
 
 impl Default for FilterMapParams {
@@ -261,6 +265,19 @@ impl FilterMapParams {
         }
         // If it doesn't fit in any layer, return the last layer
         (MAX_LAYERS - 1) as usize
+    }
+
+    ///
+    pub fn gti_epoch_root(&self, epoch: u32) -> TreeIndex {
+        GTI_EPOCHS.append(epoch.into(), self.log_epoch_history)
+    }
+
+    ///
+    pub fn gti_log_entry_root(&self, lv_index: u64) -> TreeIndex {
+        let log_tree_height = self.log_maps_per_epoch + self.log_values_per_map;
+        self.gti_epoch_root((lv_index >> log_tree_height) as u32)
+            .child(GTI_LOG_ENTRIES)
+            .append(lv_index & ((1u64 << log_tree_height) - 1), log_tree_height as u64)
     }
 }
 
