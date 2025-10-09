@@ -55,14 +55,14 @@ impl TreeIndex {
         if b >= 64 {
             return Self { lo: 0, hi: self.lo << (b - 64) };
         }
-        Self { lo: self.lo << b, hi: self.hi << b + self.lo >> (64 - b) }
+        Self { lo: self.lo << b, hi: (self.hi << b) + (self.lo >> (64 - b)) }
     }
 
     pub fn shift_right(self, b: u64) -> Self {
         if b >= 64 {
             return Self { lo: self.hi >> (b - 64), hi: 0 };
         }
-        Self { lo: self.lo >> b + self.hi << (64 - b), hi: self.hi >> b }
+        Self { lo: (self.lo >> b) + (self.hi << (64 - b)), hi: self.hi >> b }
     }
 
     pub fn add_int(self, add: i64) -> Self {
@@ -79,16 +79,16 @@ impl TreeIndex {
 
     pub fn bit(self, b: u64) -> u64 {
         if b < 64 {
-            return self.lo >> b & 1;
+            return (self.lo >> b) & 1;
         }
-        self.hi >> (b - 64) & 1
+        (self.hi >> (b - 64)) & 1
     }
 
     pub fn lower_bits(self, b: u64) -> Self {
         if b <= 64 {
             return Self { lo: self.lo & (1 << b - 1), hi: 0 };
         }
-        Self { lo: self.lo, hi: self.hi & (1 << (b - 64) - 1) }
+        Self { lo: self.lo, hi: self.hi & ((1 << (b - 64)) - 1) }
     }
 
     pub fn split(self, split_level: u64) -> (Self, Self) {

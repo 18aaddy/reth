@@ -7,7 +7,6 @@ use alloy_primitives::{map::HashMap, B256};
 use reth_log_index_common::{TreeIndex, TreeNode, ROOT_INDEX};
 use sha2::{Digest, Sha256};
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct MemTreeRoot {
     node_index: u32,
@@ -23,15 +22,15 @@ pub struct MemTreeNode {
 
 impl MemTreeNode {
     fn left_child(&self) -> u32 {
-        self.left & (1 << 31 - 1)
+        self.left & ((1 << 31) - 1)
     }
 
     fn right_child(&self) -> u32 {
-        self.right & (1 << 31 - 1)
+        self.right & ((1 << 31) - 1)
     }
 
     fn is_leaf(&self) -> bool {
-        self.left_child() == (1 << 31 - 1)
+        self.left_child() == ((1 << 31) - 1)
     }
 
     fn is_known(&self) -> bool {
@@ -43,22 +42,23 @@ impl MemTreeNode {
     }
 
     fn set_children(&mut self, left: u32, right: u32) {
-        (self.left, self.right) = (self.left & (1 << 31) + left, self.right & (1 << 31) + right);
+        (self.left, self.right) =
+            ((self.left & (1 << 31)) + left, (self.right & (1 << 31)) + right);
     }
 
     fn set_leaf(&mut self) {
-        self.set_children(1 << 31 - 1, 1 << 31 - 1);
+        self.set_children((1 << 31) - 1, (1 << 31) - 1);
     }
 
     fn set_known(&mut self, b: bool) {
-        self.left &= 1 << 31 - 1;
+        self.left &= (1 << 31) - 1;
         if b {
             self.left += 1 << 31;
         }
     }
 
     fn set_finalized(&mut self, b: bool) {
-        self.right &= 1 << 31 - 1;
+        self.right &= (1 << 31) - 1;
         if b {
             self.right += 1 << 31;
         }
@@ -70,7 +70,6 @@ impl MemTreeNode {
 pub struct MemTree {
     pub nodes: Vec<MemTreeNode>,
     pub node_count: u32,
-    //? Use Range<> instead?
     pub blocks: Range<u64>,
     pub roots: HashMap<u64, MemTreeRoot>,
 }
@@ -111,7 +110,7 @@ impl MemTree {
     }
 
     fn expand(&mut self) {
-        self.nodes.append(&mut Vec::<MemTreeNode>::with_capacity(self.nodes.len() / 8 + 1000));
+        self.nodes.reserve(self.nodes.len() / 8 + 1000);
     }
 
     fn add_node(&mut self) -> u32 {
@@ -150,7 +149,6 @@ impl MemTree {
     }
 }
 
-// Create a new impl block for MemTreeView
 impl MemTreeView {
     pub fn new_reader(tree: Arc<Mutex<MemTree>>, block_number: u64) -> Self {
         let tree_guard = tree.lock().unwrap();
@@ -202,7 +200,7 @@ impl MemTreeView {
         } else {
             tree_guard.nodes.insert(
                 new_root as usize,
-                MemTreeNode { node: [0; 32], left: 1 << 31 - 1, right: 1 << 31 - 1 },
+                MemTreeNode { node: [0; 32], left: (1 << 31) - 1, right: (1 << 31) - 1 },
             );
         }
         let mv = MemTreeView {
@@ -481,4 +479,73 @@ pub struct MemTreeView {
     pub last_shift_index: TreeIndex,
     pub last_height: u64,
     pub last_node_pos: [u32; 128],
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::map::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn test_mem_tree_needs_expand() {
+        let mut mem_tree = MemTree {
+            nodes: vec![MemTreeNode::default()],
+            node_count: 1,
+            blocks: Range { first: 1, after_last: 6 },
+            roots: HashMap::<u64, MemTreeRoot>::default(),
+        };
+
+        let need_expand = mem_tree.need_expand();
+        assert_eq!(need_expand, true);
+
+        println!("Capacity before expand: {}", mem_tree.nodes.capacity());
+        mem_tree.expand();
+        println!("Capacity after expand: {}", mem_tree.nodes.capacity());
+    }
+
+    #[test]
+    fn test_node_hash() {
+        let mut mem_tree = MemTree {
+            nodes: vec![
+                MemTreeNode { node: [0u8; 32], left: 1, right: 2 },
+                MemTreeNode {
+                    node: [1u8; 32],
+                    left: (1 << 31) - 1 | (1 << 31),
+                    right: (1 << 31) - 1,
+                },
+                MemTreeNode {
+                    node: [2u8; 32],
+                    left: (1 << 31) - 1 | (1 << 31),
+                    right: (1 << 31) - 1,
+                },
+            ],
+            node_count: 3,
+            blocks: Range { first: 0, after_last: 1 },
+            roots: {
+                let mut map = HashMap::<u64, MemTreeRoot>::default();
+                map.insert(0, MemTreeRoot { node_index: 0, block_id: B256::ZERO });
+                map
+            },
+        };
+
+        println!(
+            "Left child: {}, right child: {}",
+            mem_tree.nodes[0].left_child(),
+            mem_tree.nodes[0].right_child()
+        );
+        mem_tree.hash_node(ROOT_INDEX, 0);
+        println!("Nodes after hashing: {:?}", mem_tree.nodes);
+
+        mem_tree.nodes[1].set_children(1, 2);
+        assert_eq!(mem_tree.nodes[1].is_leaf(), false);
+        println!("Nodes after setting children: {:?}", mem_tree.nodes);
+    }
+
+    #[test]
+    fn test_mem_tree_view() {
+        // let mv = MemTreeView {
+
+        // };
+    }
 }
