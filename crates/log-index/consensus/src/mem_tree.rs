@@ -483,7 +483,7 @@ pub struct MemTreeView {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::map::HashMap;
+    use alloy_primitives::{hex::FromHex, map::HashMap};
 
     use super::*;
 
@@ -544,8 +544,80 @@ mod tests {
 
     #[test]
     fn test_mem_tree_view() {
-        // let mv = MemTreeView {
+        let mut mem_tree = MemTree {
+            nodes: vec![
+                MemTreeNode { node: [0u8; 32], left: 1, right: 2 }, // 0
+                MemTreeNode { node: [1u8; 32], left: 3, right: 4 }, // 1
+                MemTreeNode { node: [2u8; 32], left: 5, right: 6 }, // 2
+                MemTreeNode { node: [3u8; 32], left: 0, right: 0 }, // 3
+                MemTreeNode { node: [4u8; 32], left: 0, right: 0 }, // 4
+                MemTreeNode { node: [5u8; 32], left: 0, right: 0 }, // 5
+                MemTreeNode { node: [6u8; 32], left: 0, right: 0 }, // 6
+            ],
+            node_count: 7,
+            blocks: Range { first: 0, after_last: 3 },
+            roots: {
+                let mut map = HashMap::<u64, MemTreeRoot>::default();
+                map.insert(0, MemTreeRoot { node_index: 0, block_id: B256::ZERO });
+                map.insert(
+                    1,
+                    MemTreeRoot {
+                        node_index: 1,
+                        block_id: B256::from_hex(
+                            "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+                        )
+                        .unwrap(),
+                    },
+                );
+                map.insert(
+                    2,
+                    MemTreeRoot {
+                        node_index: 1,
+                        block_id: B256::from_hex(
+                            "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+                        )
+                        .unwrap(),
+                    },
+                );
+                map
+            },
+        };
 
-        // };
+        mem_tree.nodes[0].set_known(true);
+        mem_tree.nodes[1].set_known(true);
+        mem_tree.nodes[2].set_known(true);
+        mem_tree.nodes[3].set_known(true);
+        mem_tree.nodes[4].set_known(true);
+        mem_tree.nodes[5].set_known(true);
+        mem_tree.nodes[6].set_known(true);
+
+        let block_number = 2;
+        let parent_id =
+            B256::from_hex("6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b")
+                .unwrap();
+        let block_id =
+            B256::from_hex("d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35")
+                .unwrap();
+
+        let mut mv = MemTreeView::new_writer(
+            Arc::new(Mutex::new(mem_tree)),
+            block_number,
+            parent_id,
+            block_id,
+        );
+
+        let _mem_tree_ref = mv.tree.lock().unwrap();
+        println!(
+            "Node 0 leaf: {}, Node 1 leaf: {}, Node 2 leaf: {}, Node 3 leaf: {}, Node 4 leaf: {}, Node 5 leaf: {}",
+            _mem_tree_ref.nodes[0].is_leaf(),
+            _mem_tree_ref.nodes[1].is_leaf(),
+            _mem_tree_ref.nodes[2].is_leaf(),
+            _mem_tree_ref.nodes[3].is_leaf(),
+            _mem_tree_ref.nodes[4].is_leaf(),
+            _mem_tree_ref.nodes[5].is_leaf()
+        );
+        drop(_mem_tree_ref);
+
+        println!("Root hash: {}", mv.root_hash());
     }
 }

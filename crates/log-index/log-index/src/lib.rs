@@ -14,3 +14,4 @@ pub mod query;
 
 /// Utility functions
 pub mod utils;
+pub use utils::*;
