@@ -9,18 +9,33 @@ use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug)]
 pub struct MemTreeRoot {
-    node_index: u32,
-    block_id: B256,
+    pub node_index: u32,
+    pub block_id: B256,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub struct MemTreeNode {
-    node: TreeNode,
-    left: u32,
-    right: u32,
+    pub node: TreeNode,
+    pub left: u32,
+    pub right: u32,
 }
 
 impl MemTreeNode {
+    /// Creates an uninitialized node - equivalent to Go's nil
+    fn uninitialized() -> Self {
+        Self {
+            node: [0u8; 32],
+            left: 0,  // Not a leaf marker
+            right: 0, // Not a leaf marker
+        }
+    }
+
+    /// Checks if a node is uninitialized (equivalent to Go's nil check)
+    pub fn is_uninitialized(&self) -> bool {
+        // A node is uninitialized if it has default values and isn't marked as known or leaf
+        self.node == [0u8; 32] && self.left == 0 && self.right == 0
+    }
+
     fn left_child(&self) -> u32 {
         self.left & ((1 << 31) - 1)
     }
@@ -110,17 +125,28 @@ impl MemTree {
     }
 
     fn expand(&mut self) {
-        self.nodes.reserve(self.nodes.len() / 8 + 1000);
+        let add = self.nodes.len() / 8 + 1000;
+        // Use uninitialized nodes instead of default to avoid confusion with valid nodes
+        self.nodes.resize(self.nodes.len() + add, MemTreeNode::uninitialized());
     }
 
     fn add_node(&mut self) -> u32 {
         let new_node = self.node_count;
         self.node_count += 1;
+
+        // Ensure we have space for the new node
+        if new_node as usize >= self.nodes.len() {
+            self.expand();
+        }
+
+        // Initialize the new node position with an uninitialized node
+        self.nodes[new_node as usize] = MemTreeNode::uninitialized();
+
         new_node
     }
 
     fn hash_node(&mut self, index: TreeIndex, node_index: u32) {
-        let node = self.nodes[node_index as usize];
+        let node = &mut self.nodes[node_index as usize];
         if node.is_known() {
             return;
         }
@@ -128,11 +154,13 @@ impl MemTree {
             println!("unknown {} {}", index.hi, index.lo);
             panic!("unknown leaf error occured during hashing");
         }
-        self.hash_node(index.append(0, 1), node.left_child());
-        self.hash_node(index.append(1, 1), node.right_child());
+        let left = node.left_child();
+        let right = node.right_child();
+        self.hash_node(index.append(0, 1), left);
+        self.hash_node(index.append(1, 1), right);
         let mut hasher = Sha256::new();
-        hasher.update(&self.nodes[node.left_child() as usize].node);
-        hasher.update(&self.nodes[node.right_child() as usize].node);
+        hasher.update(&self.nodes[left as usize].node);
+        hasher.update(&self.nodes[right as usize].node);
         let res = hasher.finalize();
         self.nodes[node_index as usize].node.copy_from_slice(&res);
         self.nodes[node_index as usize].set_known(true);
@@ -198,10 +226,11 @@ impl MemTreeView {
                 *tree_guard.nodes.get(parent_root.node_index as usize).expect("Invalid node index");
             tree_guard.nodes.insert(new_root as usize, mem_tree_node);
         } else {
-            tree_guard.nodes.insert(
-                new_root as usize,
-                MemTreeNode { node: [0; 32], left: (1 << 31) - 1, right: (1 << 31) - 1 },
-            );
+            // For genesis block, create a known leaf node
+            let mut genesis_node = MemTreeNode::uninitialized();
+            genesis_node.set_leaf();
+            genesis_node.set_known(true);
+            tree_guard.nodes[new_root as usize] = genesis_node;
         }
         let mv = MemTreeView {
             tree: Arc::clone(&tree),
@@ -251,7 +280,7 @@ impl MemTreeView {
         mut_slice.copy_from_slice(&slice);
 
         for pos in tree_guard.node_count + new_pos - node_boundary..tree_guard.node_count {
-            tree_guard.nodes[pos as usize] = MemTreeNode::default();
+            tree_guard.nodes[pos as usize] = MemTreeNode::uninitialized();
         }
 
         let pos_mapping = |old_pos: u32| -> u32 {
@@ -369,12 +398,14 @@ impl MemTreeView {
         let mut tree_guard = self.tree.lock().unwrap();
 
         let mut current_node = tree_guard.nodes[node_pos as usize];
-        let mut old_node = current_node;
+        let mut old_node = if current_node.is_uninitialized() { None } else { Some(current_node) };
 
-        if old_node.is_known() {
-            old_node.set_known(false);
-            tree_guard.nodes[node_pos as usize] = old_node;
-            current_node = old_node;
+        if let Some(ref mut old) = old_node {
+            if old.is_known() {
+                old.set_known(false);
+                tree_guard.nodes[node_pos as usize] = *old;
+                current_node = *old;
+            }
         }
 
         let target_height = 127 - index.leading_zeros();
@@ -385,7 +416,7 @@ impl MemTreeView {
             let new_node_pos = tree_guard.add_node();
             let mut new_sibling = 0;
 
-            let copy_sibling = !old_node.is_leaf() && old_node != MemTreeNode::default();
+            let copy_sibling = old_node.is_some() && !old_node.unwrap().is_leaf();
             if !copy_sibling {
                 println!("Node count: {}, f: add_new_path(), l: 394", tree_guard.node_count);
 
@@ -394,28 +425,30 @@ impl MemTreeView {
             }
 
             if index.bit(target_height - node_height - 1) == 0 {
-                if copy_old_nodes {
-                    if !old_node.is_leaf() {
-                        let left_child_pos = old_node.left_child();
+                if copy_old_nodes && old_node.is_some() {
+                    let old = old_node.unwrap();
+                    if !old.is_leaf() {
+                        let left_child_pos = old.left_child();
                         let left_child = tree_guard.nodes[left_child_pos as usize];
                         tree_guard.nodes[new_node_pos as usize] = left_child;
                     }
                 }
                 if copy_sibling {
-                    new_sibling = old_node.right_child();
+                    new_sibling = old_node.unwrap().right_child();
                 }
                 current_node.set_children(new_node_pos, new_sibling);
                 tree_guard.nodes[node_pos as usize] = current_node;
             } else {
-                if copy_old_nodes {
-                    if !old_node.is_leaf() {
-                        let right_child_pos = old_node.right_child();
+                if copy_old_nodes && old_node.is_some() {
+                    let old = old_node.unwrap();
+                    if !old.is_leaf() {
+                        let right_child_pos = old.right_child();
                         let right_child = tree_guard.nodes[right_child_pos as usize];
                         tree_guard.nodes[new_node_pos as usize] = right_child;
                     }
                 }
                 if copy_sibling {
-                    new_sibling = old_node.left_child();
+                    new_sibling = old_node.unwrap().left_child();
                 }
                 current_node.set_children(new_sibling, new_node_pos);
                 tree_guard.nodes[node_pos as usize] = current_node;
@@ -427,9 +460,9 @@ impl MemTreeView {
 
             if node_height < old_height {
                 let old_node_pos = self.last_node_pos[node_height as usize];
-                old_node = tree_guard.nodes[old_node_pos as usize];
+                old_node = Some(tree_guard.nodes[old_node_pos as usize]);
             } else {
-                old_node = MemTreeNode::default();
+                old_node = None;
             }
             self.last_node_pos[node_height as usize] = node_pos;
         }
@@ -443,7 +476,6 @@ impl MemTreeView {
         node.node = value;
         node.set_leaf();
         node.set_known(true);
-
         self.expand();
     }
 
@@ -490,7 +522,7 @@ mod tests {
     #[test]
     fn test_mem_tree_needs_expand() {
         let mut mem_tree = MemTree {
-            nodes: vec![MemTreeNode::default()],
+            nodes: vec![MemTreeNode::uninitialized()],
             node_count: 1,
             blocks: Range { first: 1, after_last: 6 },
             roots: HashMap::<u64, MemTreeRoot>::default(),
@@ -619,5 +651,58 @@ mod tests {
         drop(_mem_tree_ref);
 
         println!("Root hash: {}", mv.root_hash());
+    }
+
+    #[test]
+    fn test_uninitialized_vs_default() {
+        // Test the distinction between uninitialized nodes and default nodes
+        let uninitialized = MemTreeNode::uninitialized();
+        let default = MemTreeNode::default();
+
+        // Both should have the same memory layout
+        assert_eq!(uninitialized.node, default.node);
+        assert_eq!(uninitialized.left, default.left);
+        assert_eq!(uninitialized.right, default.right);
+
+        // Both should be considered uninitialized when created this way
+        assert!(uninitialized.is_uninitialized());
+        assert!(default.is_uninitialized());
+
+        // But we can distinguish them semantically through explicit initialization
+        let mut initialized_leaf = MemTreeNode::uninitialized();
+        initialized_leaf.set_leaf();
+        initialized_leaf.set_known(true);
+
+        // Now this node is clearly not uninitialized
+        assert!(!initialized_leaf.is_uninitialized());
+        assert!(initialized_leaf.is_leaf());
+        assert!(initialized_leaf.is_known());
+
+        println!("Uninitialized node: {:?}", uninitialized);
+        println!("Default node: {:?}", default);
+        println!("Initialized leaf: {:?}", initialized_leaf);
+    }
+
+    #[test]
+    fn test_mem_tree_add_node_initialization() {
+        let mut mem_tree = MemTree {
+            nodes: vec![MemTreeNode::uninitialized(); 10],
+            node_count: 0,
+            blocks: Range { first: 0, after_last: 1 },
+            roots: HashMap::default(),
+        };
+
+        // Adding a node should return the next available index
+        let node_idx = mem_tree.add_node();
+        assert_eq!(node_idx, 0);
+        assert_eq!(mem_tree.node_count, 1);
+
+        // The node at that index should be uninitialized
+        assert!(mem_tree.nodes[node_idx as usize].is_uninitialized());
+
+        // Add another node
+        let node_idx2 = mem_tree.add_node();
+        assert_eq!(node_idx2, 1);
+        assert_eq!(mem_tree.node_count, 2);
     }
 }

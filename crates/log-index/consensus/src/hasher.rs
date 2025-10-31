@@ -2,10 +2,17 @@ use crate::{mem_tree::MemTreeView, proof::TreeReader};
 use alloy_consensus::Header;
 use alloy_primitives::{Log, B256};
 use reth_log_index::utils::{address_value, topic_value};
-use reth_log_index_common::{FilterMapParams, TreeIndex, TreeNode, GTI_DELIMITER_META_BLOCK_HASH, GTI_DELIMITER_META_BLOCK_NUMBER, GTI_DELIMITER_META_DUMMY, GTI_DELIMITER_META_TIMESTAMP, GTI_DELIMITER_ZERO, GTI_EPOCHS, GTI_FILTER_MAPS, GTI_LOG_ADDRESS, GTI_LOG_DATA, GTI_LOG_ENTRIES, GTI_LOG_META_BLOCK_NUMBER, GTI_LOG_META_LOG_INDEX, GTI_LOG_META_TX_HASH, GTI_LOG_META_TX_INDEX, GTI_LOG_TOPICS_LENGTH, GTI_LOG_TOPICS_ROOT, GTI_LOG_ZERO, GTI_NEXT_INDEX, GTI_PROG_LIST_COUNT, GTI_PROG_LIST_NEXT_TREE, GTI_PROG_LIST_SUBTREE, GTI_PROG_LIST_TREE, ZERO_HASHES};
+use reth_log_index_common::{
+    FilterMapParams, TreeIndex, TreeNode, GTI_DELIMITER_META_BLOCK_HASH,
+    GTI_DELIMITER_META_BLOCK_NUMBER, GTI_DELIMITER_META_DUMMY, GTI_DELIMITER_META_TIMESTAMP,
+    GTI_DELIMITER_ZERO, GTI_EPOCHS, GTI_FILTER_MAPS, GTI_LOG_ADDRESS, GTI_LOG_DATA,
+    GTI_LOG_ENTRIES, GTI_LOG_META_BLOCK_NUMBER, GTI_LOG_META_LOG_INDEX, GTI_LOG_META_TX_HASH,
+    GTI_LOG_META_TX_INDEX, GTI_LOG_TOPICS_LENGTH, GTI_LOG_TOPICS_ROOT, GTI_LOG_ZERO,
+    GTI_NEXT_INDEX, GTI_PROG_LIST_COUNT, GTI_PROG_LIST_NEXT_TREE, GTI_PROG_LIST_SUBTREE,
+    GTI_PROG_LIST_TREE, ZERO_HASHES,
+};
 
 use schnellru::LruMap;
-
 
 // TODO: Is LogValue needed or something else can be used?
 type BlockNumber = u64;
@@ -311,8 +318,8 @@ impl<'a> Hasher<'a> {
                 );
             }
 
-            let map_row_root_index =
-                epoch_row_root_index.append(map_sub_index as u64, self.params.log_maps_per_epoch.into());
+            let map_row_root_index = epoch_row_root_index
+                .append(map_sub_index as u64, self.params.log_maps_per_epoch.into());
             self.tree.set(map_row_root_index.child(GTI_PROG_LIST_TREE), TreeNode::default());
             self.tree.set(map_row_root_index.child(GTI_PROG_LIST_COUNT), TreeNode::default());
             self.expand_vector(
@@ -364,8 +371,8 @@ impl<'a> Hasher<'a> {
         let filter_maps_root_index = self.params.gti_epoch_root(epoch).child(GTI_FILTER_MAPS);
         let epoch_row_root_index =
             filter_maps_root_index.append(row_index as u64, self.params.log_map_height.into());
-        let map_row_root_index =
-            epoch_row_root_index.append(map_sub_index as u64, self.params.log_maps_per_epoch.into());
+        let map_row_root_index = epoch_row_root_index
+            .append(map_sub_index as u64, self.params.log_maps_per_epoch.into());
 
         let mut pl = ProgListIndex {
             params: self.params,
@@ -464,4 +471,399 @@ pub(crate) fn u64_to_node(value: u64) -> TreeNode {
     let mut node = [0u8; 32];
     node[..8].copy_from_slice(&value.to_le_bytes());
     node
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mem_tree::{MemTree, MemTreeNode, MemTreeRoot, MemTreeView, Range};
+    use alloy_consensus::Header;
+    use alloy_primitives::{map::HashMap, Address, Bytes, FixedBytes, Log, LogData, B256, U256};
+    use reth_log_index_common::RANGE_TEST_PARAMS;
+    use schnellru::{ByLength, LruMap};
+    use std::sync::{Arc, Mutex};
+
+    fn create_test_hasher() -> Hasher<'static> {
+        // Create a basic MemTree
+        let mem_tree = MemTree {
+            nodes: vec![MemTreeNode {
+                node: [0u8; 32],
+                left: (1 << 31) - 1, // Set as leaf
+                right: (1 << 31) - 1,
+            }],
+            node_count: 1,
+            blocks: Range { first: 0, after_last: 1 },
+            roots: {
+                let mut map = HashMap::<u64, MemTreeRoot>::default();
+                map.insert(0, MemTreeRoot { node_index: 0, block_id: B256::ZERO });
+                map
+            },
+        };
+
+        // Create MemTreeView using new_writer
+        let tree_view = MemTreeView::new_writer(
+            Arc::new(Mutex::new(mem_tree)),
+            0,          // block_number
+            B256::ZERO, // parent_id (for genesis block)
+            B256::ZERO, // block_id
+        );
+
+        let tree = Box::new(tree_view);
+        let params = Box::leak(Box::new(RANGE_TEST_PARAMS));
+        let row_mapping_cache = LruMap::new(ByLength::new(100));
+
+        Hasher { tree, params, row_mapping_cache }
+    }
+
+    fn create_test_log() -> Log {
+        Log {
+            address: Address::from([0x42; 20]),
+            data: LogData::new_unchecked(
+                vec![B256::from([0x01; 32]), B256::from([0x02; 32])],
+                Bytes::from(vec![0x01, 0x02, 0x03, 0x04]),
+            ),
+        }
+    }
+
+    fn create_test_log_value() -> LogValue {
+        LogValue {
+            value: B256::from([0x11; 32]),
+            transaction_hash: B256::from([0x22; 32]),
+            block_number: 123,
+            transaction_index: 1,
+            log_in_tx_index: 0,
+        }
+    }
+
+    fn create_test_header() -> Header {
+        Header {
+            parent_hash: B256::from([0x33; 32]),
+            ommers_hash: B256::from([0x44; 32]),
+            beneficiary: Address::from([0x55; 20]),
+            state_root: B256::from([0x66; 32]),
+            transactions_root: B256::from([0x77; 32]),
+            receipts_root: B256::from([0x88; 32]),
+            logs_bloom: Default::default(),
+            difficulty: U256::from(1000),
+            number: 123,
+            gas_limit: 8000000,
+            gas_used: 21000,
+            timestamp: 1609459200, // 2021-01-01 00:00:00 UTC
+            extra_data: Bytes::new(),
+            mix_hash: B256::from([0x99; 32]),
+            nonce: FixedBytes::new([1; 8]),
+            base_fee_per_gas: Some(1000000000),
+            withdrawals_root: None,
+            blob_gas_used: None,
+            excess_blob_gas: None,
+            parent_beacon_block_root: None,
+            requests_hash: None,
+        }
+    }
+
+    fn print_tree(mt: &MemTreeView) {
+        let tree: std::sync::MutexGuard<'_, MemTree> = mt.tree.lock().unwrap();
+        let nodes = tree.nodes.clone();
+        let mut num_zero_nodes = 0;
+
+        for i in 0..nodes.len() {
+            if nodes[i].is_uninitialized() {
+                num_zero_nodes += 1;
+                continue;
+            }
+            println!("Node Index: {}, Node: {:?}", i, nodes[i].node);
+        }
+        for i in tree.blocks.first..tree.blocks.after_last {
+            println!("Block: {}, MemTreeRoot: {:?} ", i, tree.roots.get(&i).unwrap());
+        }
+        println!("Node count: {}", tree.node_count);
+        println!("Block Range: {} to {}", tree.blocks.first, tree.blocks.after_last);
+        println!("Number of zero nodes: {}", num_zero_nodes);
+    }
+
+    #[test]
+    fn test_node_conversion_functions() {
+        let value = 0x123456789abcdef0u64;
+        let node = u64_to_node(value);
+        let converted_back = node_to_u64(node);
+        assert_eq!(value, converted_back);
+
+        // Test with zero
+        let zero_node = u64_to_node(0);
+        assert_eq!(node_to_u64(zero_node), 0);
+
+        // Test with max value
+        let max_node = u64_to_node(u64::MAX);
+        assert_eq!(node_to_u64(max_node), u64::MAX);
+    }
+
+    #[test]
+    fn test_log_value_creation() {
+        let log_value = create_test_log_value();
+        assert_eq!(log_value.block_number, 123);
+        assert_eq!(log_value.transaction_index, 1);
+        assert_eq!(log_value.log_in_tx_index, 0);
+        assert_eq!(log_value.value, B256::from([0x11; 32]));
+        assert_eq!(log_value.transaction_hash, B256::from([0x22; 32]));
+    }
+
+    #[test]
+    fn test_lv_position() {
+        let position = LVPosition { row_index: 42, layer_index: 1 };
+        assert_eq!(position.row_index, 42);
+        assert_eq!(position.layer_index, 1);
+    }
+
+    #[test]
+    fn test_prog_list_index_init() {
+        let params = RANGE_TEST_PARAMS;
+        let mut prog_list = ProgListIndex {
+            params: &params,
+            list_root: TreeIndex::default(),
+            count_index: TreeIndex::default(),
+            tree_root: TreeIndex::default(),
+            subtree_height: 0,
+            subtree_first: 0,
+        };
+
+        let root = TreeIndex { lo: 1, hi: 0 };
+        prog_list.init(&params, root);
+
+        assert_eq!(prog_list.list_root, root);
+        assert_eq!(prog_list.subtree_height, 0);
+        assert_eq!(prog_list.subtree_first, 0);
+    }
+
+    #[test]
+    fn test_hasher_init_genesis() {
+        let mut hasher: Hasher<'static> = create_test_hasher();
+        hasher.init_genesis();
+
+        print_tree(&hasher.tree);        
+        // Verify that the tree was initialized correctly
+        // let next_index_node = hasher.tree.get(GTI_NEXT_INDEX);
+        // assert_eq!(node_to_u64(next_index_node), 0);
+        // println!("Hasher: {:?}", hasher);
+    }
+
+    #[test]
+    fn test_hasher_add_block_delimiter() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let header = create_test_header();
+        print_tree(&hasher.tree);
+        let (start_index, end_index) = hasher.add_block_delimiter(&header);
+
+        assert_eq!(end_index - start_index, 1);
+
+        // Verify that the next index was updated
+        // let next_index_node = hasher.tree.get(GTI_NEXT_INDEX);
+        // assert_eq!(node_to_u64(next_index_node), end_index);
+    }
+
+    #[test]
+    fn test_hasher_add_log_event() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let log = create_test_log();
+        let log_value = create_test_log_value();
+
+        // The add_count should be topics.len() + 1 (for address)
+        let expected_add_count = log.topics().len() as u64 + 1;
+
+        let (start_index, end_index) = hasher.add_log_event(&log, &log_value);
+
+        assert_eq!(end_index - start_index, expected_add_count);
+
+        // // Verify that the next index was updated
+        // let next_index_node = hasher.tree.get(GTI_NEXT_INDEX);
+        // assert_eq!(node_to_u64(next_index_node), end_index);
+    }
+
+    #[test]
+    fn test_multiple_log_events() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let log1 = create_test_log();
+        let log_value1 = create_test_log_value();
+
+        let log2 = Log {
+            address: Address::from([0x43; 20]),
+            data: LogData::new_unchecked(
+                vec![B256::from([0x03; 32])], // Different number of topics
+                Bytes::from(vec![0x05, 0x06]),
+            ),
+        };
+        let log_value2 = LogValue {
+            value: B256::from([0x12; 32]),
+            transaction_hash: B256::from([0x23; 32]),
+            block_number: 124,
+            transaction_index: 2,
+            log_in_tx_index: 1,
+        };
+
+        let (start1, end1) = hasher.add_log_event(&log1, &log_value1);
+        let (start2, end2) = hasher.add_log_event(&log2, &log_value2);
+
+        // Verify that the second log starts where the first ended
+        assert_eq!(start2, end1);
+
+        // Verify expected counts
+        assert_eq!(end1 - start1, log1.topics().len() as u64 + 1);
+        assert_eq!(end2 - start2, log2.topics().len() as u64 + 1);
+    }
+
+    #[test]
+    fn test_mixed_log_events_and_block_delimiters() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let header = create_test_header();
+        let log = create_test_log();
+        let log_value = create_test_log_value();
+
+        let (block_start, block_end) = hasher.add_block_delimiter(&header);
+        let (log_start, log_end) = hasher.add_log_event(&log, &log_value);
+
+        // Verify ordering
+        assert_eq!(log_start, block_end);
+        assert_eq!(block_end - block_start, 1); // Block delimiter takes 1 slot
+        assert_eq!(log_end - log_start, log.topics().len() as u64 + 1);
+    }
+
+    #[test]
+    fn test_render_block_delimiter_data_integrity() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let header = create_test_header();
+        let (lv_index, _) = hasher.add_block_delimiter(&header);
+
+        let log_entry_root = hasher.params.gti_log_entry_root(lv_index);
+
+        // Verify block number was stored correctly
+        let block_number_node =
+            hasher.tree.get(log_entry_root.child(GTI_DELIMITER_META_BLOCK_NUMBER));
+        assert_eq!(node_to_u64(block_number_node), header.number);
+
+        // Verify timestamp was stored correctly
+        let timestamp_node = hasher.tree.get(log_entry_root.child(GTI_DELIMITER_META_TIMESTAMP));
+        assert_eq!(node_to_u64(timestamp_node), header.timestamp);
+
+        // Verify dummy value was set to max
+        let dummy_node = hasher.tree.get(log_entry_root.child(GTI_DELIMITER_META_DUMMY));
+        assert_eq!(node_to_u64(dummy_node), u64::MAX);
+    }
+
+    #[test]
+    fn test_render_log_data_integrity() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let log = create_test_log();
+        let log_value = create_test_log_value();
+        let (lv_index, _) = hasher.add_log_event(&log, &log_value);
+
+        let log_entry_root = hasher.params.gti_log_entry_root(lv_index);
+
+        // Verify topics length was stored correctly
+        let topics_length_node = hasher.tree.get(log_entry_root.child(GTI_LOG_TOPICS_LENGTH));
+        assert_eq!(node_to_u64(topics_length_node), log.topics().len() as u64);
+
+        // Verify log metadata
+        let block_number_node = hasher.tree.get(log_entry_root.child(GTI_LOG_META_BLOCK_NUMBER));
+        assert_eq!(node_to_u64(block_number_node), log_value.block_number);
+
+        let tx_index_node = hasher.tree.get(log_entry_root.child(GTI_LOG_META_TX_INDEX));
+        assert_eq!(node_to_u64(tx_index_node), log_value.transaction_index);
+
+        let log_index_node = hasher.tree.get(log_entry_root.child(GTI_LOG_META_LOG_INDEX));
+        assert_eq!(node_to_u64(log_index_node), log_value.log_in_tx_index);
+    }
+
+    #[test]
+    fn test_empty_log_data() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let empty_log = Log {
+            address: Address::from([0x42; 20]),
+            data: LogData::new_unchecked(vec![], Bytes::new()),
+        };
+        let log_value = create_test_log_value();
+
+        let (start_index, end_index) = hasher.add_log_event(&empty_log, &log_value);
+
+        // Should still add one entry for the address
+        assert_eq!(end_index - start_index, 1);
+    }
+
+    #[test]
+    fn test_large_log_data() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        let large_data = vec![0xaa; 1000]; // 1000 bytes of data
+        let large_log = Log {
+            address: Address::from([0x42; 20]),
+            data: LogData::new_unchecked(vec![B256::from([0x01; 32])], Bytes::from(large_data)),
+        };
+        let log_value = create_test_log_value();
+
+        let (start_index, end_index) = hasher.add_log_event(&large_log, &log_value);
+
+        // Should add entries for address + topic
+        assert_eq!(end_index - start_index, 2);
+    }
+
+    #[test]
+    fn test_sequential_operations() {
+        let mut hasher = create_test_hasher();
+        hasher.init_genesis();
+
+        // Add a series of operations and verify proper sequencing
+        let mut expected_next_index = 0;
+
+        for i in 0..5 {
+            let header = Header {
+                number: i,
+                timestamp: 1609459200 + i,
+                requests_hash: None,
+                ..create_test_header()
+            };
+
+            let (start, end) = hasher.add_block_delimiter(&header);
+            assert_eq!(start, expected_next_index);
+            expected_next_index = end;
+
+            let log = create_test_log();
+            let log_value =
+                LogValue { block_number: i, transaction_index: i, ..create_test_log_value() };
+
+            let (log_start, log_end) = hasher.add_log_event(&log, &log_value);
+            assert_eq!(log_start, expected_next_index);
+            expected_next_index = log_end;
+        }
+
+        // Verify final state
+        let next_index_node = hasher.tree.get(GTI_NEXT_INDEX);
+        assert_eq!(node_to_u64(next_index_node), expected_next_index);
+    }
+
+    #[test]
+    #[should_panic(expected = "init_with_proof not implemented")]
+    fn test_init_with_proof_unimplemented() {
+        let hasher = create_test_hasher();
+        hasher.init_with_proof(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "make_init_proof not implemented")]
+    fn test_make_init_proof_unimplemented() {
+        let hasher = create_test_hasher();
+        hasher.make_init_proof();
+    }
 }

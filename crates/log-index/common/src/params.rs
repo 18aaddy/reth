@@ -22,7 +22,7 @@ pub const DEFAULT_PARAMS: FilterMapParams = FilterMapParams {
 
 /// Test parameters that put one log value per epoch, ensuring block exact tail unindexing for
 /// testing
-const RANGE_TEST_PARAMS: FilterMapParams = FilterMapParams {
+pub const RANGE_TEST_PARAMS: FilterMapParams = FilterMapParams {
     log_map_height: 4,
     log_map_width: 24,
     log_maps_per_epoch: 0,

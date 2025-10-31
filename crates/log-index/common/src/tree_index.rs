@@ -1,4 +1,4 @@
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 ///
 pub struct TreeIndex {
     pub lo: u64,
@@ -52,6 +52,9 @@ impl TreeIndex {
     }
 
     pub fn shift_left(self, b: u64) -> Self {
+        if b == 0 {
+            return self;
+        }
         if b >= 64 {
             return Self { lo: 0, hi: self.lo << (b - 64) };
         }
@@ -59,6 +62,9 @@ impl TreeIndex {
     }
 
     pub fn shift_right(self, b: u64) -> Self {
+        if b == 0 {
+            return self;
+        }
         if b >= 64 {
             return Self { lo: self.hi >> (b - 64), hi: 0 };
         }
@@ -86,7 +92,7 @@ impl TreeIndex {
 
     pub fn lower_bits(self, b: u64) -> Self {
         if b <= 64 {
-            return Self { lo: self.lo & (1 << b - 1), hi: 0 };
+            return Self { lo: self.lo & ((1 << b) - 1), hi: 0 };
         }
         Self { lo: self.lo, hi: self.hi & ((1 << (b - 64)) - 1) }
     }
